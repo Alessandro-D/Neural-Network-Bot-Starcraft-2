@@ -1,1 +1,1 @@
-print A very dumb bot
+ A very dumb bot
