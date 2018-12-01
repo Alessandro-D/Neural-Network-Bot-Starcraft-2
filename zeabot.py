@@ -1,5 +1,5 @@
 import time
-
+import keras
 import sc2
 from sc2 import run_game, maps, Race, Difficulty, position
 from sc2.player import Bot, Computer, Human
@@ -28,11 +28,17 @@ IMMORTAL = UnitTypeId.IMMORTAL
 
 
 class Zeabot(sc2.BotAI):
-    def __init__(self):
+    def __init__(self, use_model=False):
         self.ITERATIONS_PER_MINUTE = 165
         self.FIRST_PYLON = True
         self.do_something_after = 0
+        self.use_model = use_model
+
         self.train_data = []
+
+        if self.use_model:
+            print("USING MODEL!")
+            self.model = keras.models.load_model("BasicCNN-30-epochs-0.0001-LR-4.2")
 
     async def on_step(self,iteration):
         self.iteration = iteration
@@ -145,14 +151,13 @@ class Zeabot(sc2.BotAI):
     async def chronoboost(self):
         for nexus in self.units(NEXUS).ready:
             abilities = await self.get_available_abilities(nexus)
-            if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities:
-                if not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
-                    await self.do(nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus))
+            if nexus.energy > 50:
+                if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities:
+                    if not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
+                        await self.do(nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus))
 
     async def build_assimilators(self):
         for nexus in self.units(NEXUS).ready:
-            if nexus.energy > 50:
-                self.do(nexus, )
             vaspenes = self.state.vespene_geyser.closer_than(10.0, nexus)
             for vaspene in vaspenes:
                 if not self.can_afford(ASSIMILATOR):
@@ -200,9 +205,21 @@ class Zeabot(sc2.BotAI):
 
     async def attack(self):
         if len(self.units(ZEALOT).idle)+len(self.units(STALKER).idle) > 0:
-            choice = random.randrange(0, 4)
             target = False
             if self.iteration > self.do_something_after:
+                if self.use_model:
+                    prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
+                    choice = np.argmax(prediction[0])
+                    # print('prediction: ',choice)
+
+                    choice_dict = {0: "No Attack!",
+                                   1: "Attack close to our nexus!",
+                                   2: "Attack Enemy Structure!",
+                                   3: "Attack Eneemy Start!"}
+
+                    print("Choice #{}:{}".format(choice, choice_dict[choice]))
+                else:
+                    choice = random.randrange(0, 4)
                 if choice == 0:
                     # no attack
                     wait = random.randrange(20, 165)
@@ -272,14 +289,20 @@ class Zeabot(sc2.BotAI):
 
     def on_end(self, game_result):
         print('--- on_end called ---')
-        print(game_result)
+        print(game_result, self.use_model)
+
+        with open("log.txt", "a") as f:
+            if self.use_model:
+                f.write("Model {}\n".format(game_result))
+            else:
+                f.write("Random {}\n".format(game_result))
 
         if game_result == sc2.Result.Victory:
             np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
 
 
 run_game(maps.get("AbyssalReefLE"), [
-    Human(Race.Terran),
-    Bot(Race.Protoss, Zeabot()),
-    # Computer(Race.Terran, Difficulty.Hard),
-    ], realtime=True)
+    # Human(Race.Terran),
+    Bot(Race.Protoss, Zeabot(use_model=True)),
+    Computer(Race.Terran, Difficulty.Hard),
+    ], realtime=False)
