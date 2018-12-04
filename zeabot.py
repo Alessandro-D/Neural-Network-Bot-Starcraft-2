@@ -303,6 +303,6 @@ class Zeabot(sc2.BotAI):
 
 run_game(maps.get("AbyssalReefLE"), [
     # Human(Race.Terran),
-    Bot(Race.Protoss, Zeabot(use_model=True)),
+    Bot(Race.Protoss, Zeabot(use_model=False)),
     Computer(Race.Terran, Difficulty.Hard),
-    ], realtime=False)
+    ], realtime=True)
